@@ -6,7 +6,6 @@ For more details, please read:
 """
 from . import loss as losslayer
 from . import utils, model, data
-from . import mask as masker
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -42,21 +41,18 @@ def trainer(conf):
         Loss for this epoch
     """
     ###############  Dataset ########################
-    types = None
-    transform = None
-    target_transform = None
-    test_fov = 19
     loader = data.load_denoising(conf['data_root'], train=True, 
         batch_size=conf['batch_size'], noise_levels=conf['noise_levels_train'], 
         types=None, captures=conf['captures'],
-        transform=transform, target_transform=transform, 
+        transform=None, target_transform=None, 
         patch_size=conf['imsize'], test_fov=19)
 
     val_loader = data.load_denoising(conf['data_root'], train=False, 
         batch_size=conf['batch_size'], noise_levels=conf['noise_levels_train'], 
         types=None, captures=conf['captures'],
-        transform=transform, target_transform=transform, 
+        transform=None, target_transform=None, 
         patch_size=conf['imsize'], test_fov=19)
+
     # val_loader = data.load_denoising_test_mix(conf['data_root'], 
     #     batch_size=conf['batch_size'], noise_levels=conf['noise_levels_test'], 
     #     transform=transform, patch_size=conf['imsize'])
@@ -64,7 +60,8 @@ def trainer(conf):
 
     ##### Model, Optimizer, Loss ############
     if conf['model'] == 'unet':
-        network = model.BaseUnet(conf['device'], conf['learn_hmask'], conf['learn_fmask'], conf['imsize'], conf['accelrate']).to(conf['device'])
+        network = model.BaseUnet(conf['device'], conf['mask_type'], \
+                conf['imsize'], conf['accelrate'], conf['captures']).to(conf['device'])
     else:
         network = model.HQSNet(K=5, mask=conf['mask'], lmbda=0, device=conf['device']).to(conf['device'])
 

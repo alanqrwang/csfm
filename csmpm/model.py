@@ -4,7 +4,7 @@ For more details, please read:
     Alan Q. Wang, Adrian V. Dalca, and Mert R. Sabuncu. 
     "Regularization-Agnostic Compressed Sensing MRI with Hypernetworks" 
 """
-from . import utils, mask
+from . import utils, undersamplemask
 from . import loss as losslayer
 from . import layers
 import torch
@@ -12,59 +12,8 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 
-def generate_measurement(frames, hadamard_mask, frame_mask, device, val=False):
-    '''Generates under-sampled and under-framed measurement in Hadamard space
-
-    frame_mask: Realization of categorical random variable
-    hadamard_mask: Realization of Bernoulli random variable
-    frames: (batch_size, num_frames, nc, n1, n2) Stack of frames of single FOV
-    '''
-    batch_size, tot_frames, nc, n1, n2 = frames.shape
-    # clean_frames = torch.mean(frames, dim=1)
-
-    frame_id = torch.randperm(tot_frames)[:1]
-    noisy_frames_1 = frames[:, frame_id, ...]
-    noisy_frames_1 = torch.mean(noisy_frames_1, dim=1)
-    frame_id = torch.randperm(tot_frames)[:10]
-    noisy_frames_10 = frames[:, frame_id, ...]
-    noisy_frames_10 = torch.mean(noisy_frames_10, dim=1)
-    frame_id = torch.randperm(tot_frames)[:25]
-    noisy_frames_25 = frames[:, frame_id, ...]
-    noisy_frames_25 = torch.mean(noisy_frames_25, dim=1)
-    frame_id = torch.randperm(tot_frames)[:50]
-    noisy_frames_50 = frames[:, frame_id, ...]
-    noisy_frames_50 = torch.mean(noisy_frames_50, dim=1)
-
-    # y_clean = utils.hadamard_transform_torch(clean_frames)
-    y_noisy_1 = utils.hadamard_transform_torch(noisy_frames_1)
-    y_noisy_10 = utils.hadamard_transform_torch(noisy_frames_10)
-    y_noisy_25 = utils.hadamard_transform_torch(noisy_frames_25)
-    y_noisy_50 = utils.hadamard_transform_torch(noisy_frames_50)
-
-    # Now, frame mask is 1 for clean, 0 for noisy
-    realized_fmask = frame_mask()
-    # one = torch.tensor(1.).to(device).float()
-    # zero = torch.tensor(0.).to(device).float()
-    # mask_1 = torch.where(realized_fmask == 0, one, zero)
-    # mask_10 = torch.where(realized_fmask == 1, one, zero)
-    # mask_25 = torch.where(realized_fmask == 2, one, zero)
-    # mask_50 = torch.where(realized_fmask == 3, one, zero)
-    mask_1 = realized_fmask[..., 0]
-    mask_10 = realized_fmask[..., 1]
-    mask_25 = realized_fmask[..., 2]
-    mask_50 = realized_fmask[..., 3]
-    assert torch.all(torch.eq(mask_1+mask_10+mask_25+mask_50, torch.ones(n1, n2).float().to(device)))
-
-    y = y_noisy_1 * mask_1 \
-      + y_noisy_10 * mask_10 \
-      + y_noisy_25 * mask_25 \
-      + y_noisy_50 * mask_50 
-
-    undersample_mask = hadamard_mask()
-    return y * undersample_mask
-
 class BaseUnet(nn.Module):
-    def __init__(self, device, learn_hmask, learn_fmask, imsize, sparsity, residual=True):
+    def __init__(self, device, mask_type, imsize, sparsity, num_captures, residual=True, legacy=False):
         super(BaseUnet, self).__init__()
                 
         self.device = device
@@ -84,16 +33,10 @@ class BaseUnet(nn.Module):
         
         self.conv_last = nn.Conv2d(64, 1, 1)
 
-        if learn_hmask:
-            self.hmask = mask.HadamardMask(True, (imsize, imsize), device, self.sparsity, 5, 100, 'thres')
+        if legacy:
+            self.fmask = undersamplemask.BernoulliFrameMask(mask_type, (imsize, imsize), device, num_captures, sparsity)
         else:
-            self.hmask = mask.HadamardMask(False, (imsize, imsize), device, self.sparsity)
-        
-        if learn_fmask:
-            # self.fmask = mask.FrameMask(True, (imsize, imsize), device, 0.125, 5, 100, 'thres')
-            self.fmask = mask.CategoricalFrameMask(True, (imsize, imsize), device, 4)
-        else:
-            self.fmask = mask.FrameMask(False, (imsize, imsize), device, self.sparsity)
+            self.bernoullimask = undersamplemask.BernoulliFrameMask(mask_type, (imsize, imsize), device, num_captures, sparsity)
 
     def double_conv(self, in_channels, out_channels):
         return nn.Sequential(
@@ -103,8 +46,27 @@ class BaseUnet(nn.Module):
             nn.ReLU(inplace=True)
         )   
         
+    def generate_measurement(self, frames, mask):
+        '''Generates under-sampled and under-framed measurement in Hadamard space
+
+        mask: (num_frames, n1, n2) Realization of Bernoulli random variable
+        frames: (batch_size, num_frames, nc, n1, n2) Stack of frames of single FOV
+        '''
+        batch_size, tot_frames, nc, n1, n2 = frames.shape
+
+        # divisor = torch.cumsum(torch.ones_like(frames), dim=1)
+        # avg_frames = frames.cumsum(dim=1) / divisor # Cumulative average of all frames, along dim=1
+        # y_avg_frames = utils.hadamard_transform_torch(avg_frames) # Noisy -> Clean images in Hadamard basis, along dim=1
+        y_noisy_frames = utils.hadamard_transform_torch(frames.view(-1, nc, n1, n2)).view(frames.shape)
+        y_noisy_under = y_noisy_frames * mask
+
+        avg_y = torch.mean(y_noisy_under, dim=1)
+
+        return avg_y
+
     def forward(self, noisy_img):
-        y = generate_measurement(noisy_img, self.hmask, self.fmask, self.device)
+        mask = self.bernoullimask()
+        y = self.generate_measurement(noisy_img, mask)
 
         zf = utils.hadamard_transform_torch(y)
 

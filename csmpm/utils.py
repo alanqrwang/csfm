@@ -13,16 +13,6 @@ import glob
 from . import test
 import myutils
 
-def gen_hadamard_pattern(order, row_num, device):
-    '''https://math.stackexchange.com/questions/1998761/how-to-get-the-value-of-hadamard-matrix-given-its-column-and-row-index
-    '''
-    num_bits = int(np.log2(order))
-    nums = torch.arange(order)
-    bin_nums = ((nums.reshape(-1,1) & (2**torch.arange(num_bits))) != 0).long()
-    bin_row = ((torch.tensor(row_num).reshape(-1,1) & (2**torch.arange(num_bits))) != 0).long()
-    exponents = torch.sum(bin_nums * bin_row.repeat(bin_nums.shape[0], 1), dim=1)
-    return ((-1)**exponents).reshape(int(math.sqrt(order)), int(math.sqrt(order))).float().to(device)
-
 def hadamard_transform_torch(img, normalize=True):
     """Multiply H_n @ u where H_n is the Hadamard matrix of dimension n x n.
     n must be a power of 2.
@@ -42,14 +32,12 @@ def hadamard_transform_torch(img, normalize=True):
     x = x.squeeze(-2) / 2**(m / 2) if normalize else x.squeeze(-2)
     return x.reshape(batch_size, nc, n1, n2)
 
-def get_mask(sparsity, shape):
-    n1, n2 = shape
-    # undersample_rate = int(1/sparsity)
-    # base = torch.zeros(undersample_rate)
-    # base[0] = 1
-    # mask = base.repeat(n1*n2 // undersample_rate)
-    # mask = mask.reshape(n1, n2)
-    # return mask
+def h_plus(img):
+    return 0.5 * (torch.empty_like(img).fill_(torch.sum(img)) + hadamard_transform_torch(img))
+def h_minus(img):
+    return 0.5 * (torch.empty_like(img).fill_(torch.sum(img)) - hadamard_transform_torch(img))
+
+def get_ones_mask(sparsity, shape):
 
     # base = torch.zeros(n1*n2)
     # ones = torch.ones(n1*n2 // 2)
@@ -58,14 +46,21 @@ def get_mask(sparsity, shape):
     mask = torch.ones(shape)
     return mask
 
-def get_frame_mask(shape):
-    return torch.ones(shape)
-
-def get_random_mask(undersample_rate, shape):
+def get_equispaced_mask(sparsity, shape):
+    '''Binary mask with 0 and 1 spread evenly in the 2d mask'''
     n1, n2 = shape
-    p = torch.empty(n1, n2).fill_(1/undersample_rate)
-    mask = torch.bernoulli(p)
-    return mask
+    undersample_rate = int(1/sparsity)
+    base = torch.zeros(undersample_rate)
+    base[0] = 1
+    mask = base.repeat(n1*n2 // undersample_rate)
+    prob_mask = mask.reshape(n1, n2)
+    return prob_mask
+
+def get_random_mask(sparsity, shape):
+    '''Binary mask with 0 and 1 sampled uniformly at random in the 2d mask'''
+    p = torch.empty(shape).fill_(sparsity)
+    prob_mask = torch.bernoulli(p)
+    return prob_mask
 
 def normalize(arr):
     """Normalizes a batch of images into range [0, 1]"""

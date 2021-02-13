@@ -35,8 +35,7 @@ class Parser(argparse.ArgumentParser):
         self.add_argument('--unet_hidden', type=int, default=64)
         self.add_argument('--temp', type=float, default=0.8)
 
-        utils.add_bool_arg(self, 'learn_fmask', default=False)
-        utils.add_bool_arg(self, 'learn_hmask', default=False)
+        self.add_argument('--mask_type', type=str, choices=['learned', 'random', 'equispaced'], help='arch of model')
 
     def parse(self):
         args = self.parse_args()
@@ -45,7 +44,7 @@ class Parser(argparse.ArgumentParser):
             f'{args.model}_'f'noise_train{args.noise_levels_train}_test{args.noise_levels_test}_'\
             f'captures{args.captures}_'\
             f'bs{args.batch_size}_lr{args.lr}_'\
-            f'accelrate{args.accelrate}_'f'temp{args.temp}')
+            f'accelrate{args.accelrate}_'f'temp{args.temp}_'f'masktype{args.mask_type}')
         args.ckpt_dir = os.path.join(args.run_dir, 'checkpoints')
 
         model_folder = args.ckpt_dir
