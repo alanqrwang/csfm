@@ -4,7 +4,6 @@ For more details, please read:
     Alan Q. Wang, Adrian V. Dalca, and Mert R. Sabuncu. 
     "Regularization-Agnostic Compressed Sensing MRI with Hypernetworks" 
 """
-from . import loss as losslayer
 from . import utils, model, data
 import torch
 import torch.nn as nn
@@ -14,6 +13,7 @@ import sys
 import glob
 import os
 import math
+import matplotlib.pyplot as plt
 
 def trainer(conf):
     """Training loop. 
@@ -42,26 +42,27 @@ def trainer(conf):
     """
     ###############  Dataset ########################
     loader = data.load_denoising(conf['data_root'], train=True, 
-        batch_size=conf['batch_size'], noise_levels=conf['noise_levels_train'], 
+        batch_size=conf['batch_size'], get_noisy=not conf['simulate'],
         types=None, captures=conf['captures'],
         transform=None, target_transform=None, 
         patch_size=conf['imsize'], test_fov=19)
 
-    val_loader = data.load_denoising(conf['data_root'], train=False, 
-        batch_size=conf['batch_size'], noise_levels=conf['noise_levels_train'], 
-        types=None, captures=conf['captures'],
-        transform=None, target_transform=None, 
-        patch_size=conf['imsize'], test_fov=19)
-
-    # val_loader = data.load_denoising_test_mix(conf['data_root'], 
-    #     batch_size=conf['batch_size'], noise_levels=conf['noise_levels_test'], 
-    #     transform=transform, patch_size=conf['imsize'])
+    if conf['simulate']:
+        val_loader = data.load_denoising_test_mix(conf['data_root'], 
+            batch_size=conf['batch_size'], get_noisy=False, 
+            transform=None, patch_size=conf['imsize'])
+    else:
+        val_loader = data.load_denoising(conf['data_root'], train=False, 
+            batch_size=conf['batch_size'], get_noisy=True, 
+            types=None, captures=conf['captures'],
+            transform=None, target_transform=None, 
+            patch_size=conf['imsize'], test_fov=19)
     ##################################################
 
     ##### Model, Optimizer, Loss ############
     if conf['model'] == 'unet':
-        network = model.BaseUnet(conf['device'], conf['mask_type'], \
-                conf['imsize'], conf['accelrate'], conf['captures']).to(conf['device'])
+        network = model.BaseUnet(conf['device'], conf['mask_dist'], conf['mask_type'], \
+                conf['imsize'], conf['accelrate'], conf['captures'], conf['unet_hidden']).to(conf['device'])
     else:
         network = model.HQSNet(K=5, mask=conf['mask'], lmbda=0, device=conf['device']).to(conf['device'])
 
@@ -121,21 +122,39 @@ def train(network, dataloader, criterion, optimizer, conf):
     epoch_samples = 0
     epoch_psnr = 0
 
-    for batch_idx, (noisy_img, clean_img) in tqdm(enumerate(dataloader), total=len(dataloader)):
-        noisy_img = noisy_img.float().to(conf['device'])
-        clean_img = clean_img.float().to(conf['device'])
-
+    for batch_idx, datum in tqdm(enumerate(dataloader), total=len(dataloader)):
+        if conf['simulate']:
+            clean_img, a, b = datum
+            bs, ncrops, c, h, w = clean_img.shape
+            clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+            noisy_img = None
+            a = a.float().to(conf['device']).view(-1)
+            b = b.float().to(conf['device']).view(-1)
+        else:
+            noisy_img, clean_img = datum
+            bs, frames, ncrops, c, h, w = noisy_img.shape
+            noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
+            noisy_img = noisy_img.float().to(conf['device']).view(-1, frames, c, h, w)
+            clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+            a = None
+            b = None
+        
         optimizer.zero_grad()
         with torch.set_grad_enabled(True):
-            recon = network(noisy_img)
-            loss = criterion(recon, clean_img)
+            recon, mask = network(clean_img, noisy_img, conf['simulate'], a, b)
+            clean_img = utils.normalize(clean_img)
+            recon = utils.normalize(recon)
+            if conf['mask_dist'] == 'normal':
+                loss = (1-conf['lmbda'])*criterion(recon, clean_img) + conf['lmbda']*torch.norm(mask)
+            else:
+                loss = criterion(recon, clean_img)
 
             loss.backward()
             optimizer.step()
 
             epoch_loss += loss.data.cpu().numpy()
             epoch_psnr += np.sum(utils.get_metrics(clean_img.permute(0, 2, 3, 1), recon.permute(0, 2, 3, 1), 'psnr', False, normalized=False))
-        epoch_samples += len(noisy_img)
+        epoch_samples += len(clean_img)
     epoch_loss /= epoch_samples
     epoch_psnr /= epoch_samples
     return network, optimizer, epoch_loss, epoch_psnr
@@ -171,17 +190,35 @@ def validate(network, dataloader, criterion, conf):
     epoch_samples = 0
     epoch_psnr = 0
 
-    for batch_idx, (noisy_img, clean_img) in tqdm(enumerate(dataloader), total=len(dataloader)):
-        noisy_img = noisy_img.float().to(conf['device'])
-        clean_img = clean_img.float().to(conf['device'])
-
+    for batch_idx, datum in tqdm(enumerate(dataloader), total=len(dataloader)):
+        if conf['simulate']:
+            clean_img, a, b = datum
+            bs, ncrops, c, h, w = clean_img.shape
+            clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+            noisy_img = None
+            a = a.float().to(conf['device']).view(-1)
+            b = b.float().to(conf['device']).view(-1)
+        else:
+            noisy_img, clean_img = datum
+            print(noisy_img.shape)
+            bs, frames, ncrops, c, h, w = noisy_img.shape
+            noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
+            noisy_img = noisy_img.float().to(conf['device']).view(-1, frames, c, h, w)
+            clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+            a = None
+            b = None
         with torch.set_grad_enabled(False):
-            recon = network(noisy_img)
-            loss = criterion(recon, clean_img)
+            recon, mask = network(clean_img, noisy_img, conf['simulate'], a, b)
+            clean_img = utils.normalize(clean_img)
+            recon = utils.normalize(recon)
+            if conf['mask_dist'] == 'normal':
+                loss = (1-conf['lmbda'])*criterion(recon, clean_img) + conf['lmbda']*torch.norm(mask)
+            else:
+                loss = criterion(recon, clean_img)
 
             epoch_loss += loss.data.cpu().numpy()
             epoch_psnr += np.sum(utils.get_metrics(clean_img.permute(0, 2, 3, 1), recon.permute(0, 2, 3, 1), 'psnr', False, normalized=False))
-        epoch_samples += len(noisy_img)
+        epoch_samples += len(clean_img)
     epoch_loss /= epoch_samples
     epoch_psnr /= epoch_samples
     return network, epoch_loss, epoch_psnr

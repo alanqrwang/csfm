@@ -8,10 +8,9 @@ import torch
 import numpy as np
 import os
 import pickle
-# import parse
 import glob
-from . import test
 import myutils
+import math
 
 def hadamard_transform_torch(img, normalize=True):
     """Multiply H_n @ u where H_n is the Hadamard matrix of dimension n x n.
@@ -32,10 +31,20 @@ def hadamard_transform_torch(img, normalize=True):
     x = x.squeeze(-2) / 2**(m / 2) if normalize else x.squeeze(-2)
     return x.reshape(batch_size, nc, n1, n2)
 
-def h_plus(img):
-    return 0.5 * (torch.empty_like(img).fill_(torch.sum(img)) + hadamard_transform_torch(img))
-def h_minus(img):
-    return 0.5 * (torch.empty_like(img).fill_(torch.sum(img)) - hadamard_transform_torch(img))
+def h_plus(img, normalize=False):
+    '''Unnormalized H^+'''
+    b, nc, n1, n2 = img.shape
+    if normalize:
+        return 1/(2*math.sqrt(n1*n2)) * (torch.ones_like(img)*torch.sum(img) + hadamard_transform_torch(img, normalize=False))
+    else:
+        return 1/2 * (torch.ones_like(img)*torch.sum(img) + hadamard_transform_torch(img, normalize=False))
+def h_minus(img, normalize=False):
+    '''Unnormalized H^-'''
+    b, nc, n1, n2 = img.shape
+    if normalize:
+        return 1/(2*math.sqrt(n1*n2)) * (torch.ones_like(img)*torch.sum(img) - hadamard_transform_torch(img, normalize=False))
+    else:
+        return 1/2 * (torch.ones_like(img)*torch.sum(img) - hadamard_transform_torch(img, normalize=False))
 
 def get_ones_mask(sparsity, shape):
 

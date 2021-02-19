@@ -34,31 +34,30 @@ class Parser(argparse.ArgumentParser):
         self.add_argument('--gpu_id', type=int, default=0, help='gpu id to train on')
         self.add_argument('--unet_hidden', type=int, default=64)
         self.add_argument('--temp', type=float, default=0.8)
+        self.add_argument('--lmbda', type=float, default=0.5)
 
         self.add_argument('--mask_type', type=str, choices=['learned', 'random', 'equispaced'], help='arch of model')
+        self.add_argument('--mask_dist', type=str, choices=['normal', 'bernoulli'], help='arch of model')
+        utils.add_bool_arg(self, 'simulate')
 
     def parse(self):
         args = self.parse_args()
         date = '{}'.format(time.strftime('%b_%d'))
         args.run_dir = os.path.join(args.models_dir, args.filename_prefix, date, \
-            f'{args.model}_'f'noise_train{args.noise_levels_train}_test{args.noise_levels_test}_'\
+            f'{args.model}_'\
             f'captures{args.captures}_'\
             f'bs{args.batch_size}_lr{args.lr}_'\
-            f'accelrate{args.accelrate}_'f'temp{args.temp}_'f'masktype{args.mask_type}')
+            f'accelrate{args.accelrate}_'f'temp{args.temp}_'f'masktype{args.mask_type}_'\
+            f'dist{args.mask_dist}_'\
+            f'lmbda{args.lmbda}_'\
+            f'simulate{args.simulate}_'\
+            f'nh{args.unet_hidden}')
         args.ckpt_dir = os.path.join(args.run_dir, 'checkpoints')
 
         model_folder = args.ckpt_dir
         if not os.path.isdir(model_folder):   
             os.makedirs(model_folder)
         args.filename = model_folder
-
-        # # seed
-        # if args.seed is None:
-        #     args.seed = random.randint(1, 10000)
-        # print("Random Seed: ", args.seed)
-        # random.seed(args.seed)
-        # torch.manual_seed(args.seed)
-        # torch.backends.cudnn.benchmark=True
 
         print('Arguments:')
         pprint(vars(args))
