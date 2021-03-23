@@ -84,6 +84,12 @@ class BernoulliFrameMask(nn.Module):
         elif self.type == 'equispaced':
             fmask = utils.get_equispaced_mask(self.sparsity, self.image_dims)
             self.fmask = torch.tensor(fmask, requires_grad=False).float().to(device)
+        elif self.type == 'uniform':
+            fmask = utils.get_uniform_mask(self.sparsity, self.image_dims)
+            self.fmask = torch.tensor(fmask, requires_grad=False).float().to(device)
+        elif self.type == 'halfhalf':
+            fmask = utils.get_halfhalf_mask(self.sparsity)
+            self.fmask = torch.tensor(fmask, requires_grad=False).float().to(device)
         
     def sample_gumbel(self, shape, eps=1e-20):
         U = torch.rand(shape).to(self.device)

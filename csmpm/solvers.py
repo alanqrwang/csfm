@@ -3,6 +3,7 @@ import torch.nn as nn
 from . import model, utils
 from pytorch_wavelets import DWTForward, DWTInverse
 import matplotlib.pyplot as plt
+from torch_radon.shearlet import ShearletTransform
 
 class ImageParameter(nn.Module):
     def __init__(self, image_dims, init):
@@ -17,7 +18,7 @@ class ImageParameter(nn.Module):
     def forward(self):
         return self.x
 
-def gradient_descent(y, until_convergence, max_iters, tol, lmbda, lr, device):
+def gradient_descent(y, mask, until_convergence, max_iters, tol, lmbda, lr, device, shearlet):
     '''Gradient descent optimization of regularized regression with TV penalty'''
     loss_list = []
     prev_loss = torch.tensor(0.).float().to(device)
@@ -52,9 +53,10 @@ def gradient_descent(y, until_convergence, max_iters, tol, lmbda, lr, device):
         # plt.show()
 
         # Calculate Loss
-        Ax = utils.hadamard_transform_torch(x, normalize=True)
+        Ax = utils.hadamard_transform_torch(x, normalize=True) * mask
         dc_loss = (1-lmbda)*calc_dc(y, Ax)
-        reg_loss = lmbda*get_tv(x)
+        reg_loss = lmbda*(get_tv(x) + get_wavelets(x, device))
+        # reg_loss = lmbda*(get_tv(x) + get_shearlets(x, shearlet))
         loss = dc_loss + reg_loss
 
         loss_list.append(loss.item())
@@ -115,6 +117,15 @@ def get_wavelets(x, device):
 
     wavelets[:,:,:Yl.shape[-2],:Yl.shape[-1]] = Yl # Put in LL coefficients
     return wavelets.norm(p=1)
+
+def get_shearlets(x, shearlet):
+    # x = x.squeeze()
+    # x = torch.rfft(x, 2, normalized=True, onesided=False)
+    scales = [0.5] * 2
+    # shearlet = ShearletTransform(256, 256, scales)#, cache='/home/aw847/shear_cache/')
+    shears = shearlet.forward(x)
+    l1_shear = shears.norm(p=1)
+    return l1_shear
 
 def nextPowerOf2(n):
     """Get next power of 2"""

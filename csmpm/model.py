@@ -23,8 +23,10 @@ def generate_measurement(gt, noisy, mask, simulate, a, b, num_captures):
     if simulate:
         assert len(mask) == num_captures, 'Should be Bernoulli mask'
         assert a is not None and b is not None
-        plus = utils.h_plus(gt / num_captures, normalize=False)
-        minus = utils.h_minus(gt / num_captures, normalize=False)
+        # plus = utils.h_plus(gt / num_captures, normalize=False)
+        # minus = utils.h_minus(gt / num_captures, normalize=False)
+        plus = utils.h_plus(gt, normalize=False)
+        minus = utils.h_minus(gt, normalize=False)
         
         plus = plus.unsqueeze(1).repeat(1, num_captures, 1, 1, 1)
         minus = minus.unsqueeze(1).repeat(1, num_captures, 1, 1, 1)
@@ -37,6 +39,15 @@ def generate_measurement(gt, noisy, mask, simulate, a, b, num_captures):
         noisy_minus = torch.poisson(a_inv * minus)
 
         frames = a*noisy_plus - a*noisy_minus + torch.normal(0, std=b) - torch.normal(0, std=b)
+        # frame1 = utils.create_2d_sequency_mask(torch.log(frames[0,0, 0]))
+        # plt.imshow(frame1)
+        # plt.show()
+        # frame2 = utils.create_2d_sequency_mask(torch.log(frames[0,1, 0]))
+        # plt.imshow(frame2)
+        # plt.show()
+        # frame3 = utils.create_2d_sequency_mask(torch.log(frames[0,2, 0]))
+        # plt.imshow(frame3)
+        # plt.show()
 
         y_noisy_under = frames * mask
 
@@ -48,6 +59,12 @@ def generate_measurement(gt, noisy, mask, simulate, a, b, num_captures):
 
         y_noisy_frames = utils.hadamard_transform_torch(noisy.view(-1, nc, n1, n2)).view(noisy.shape)
         y_noisy_under = y_noisy_frames * mask
+        # plt.imshow(noisy[0,0, 0].cpu().detach().numpy())
+        # plt.show()
+        # plt.imshow(noisy[0,1,0].cpu().detach().numpy())
+        # plt.show()
+        # plt.imshow(noisy[0,2,0].cpu().detach().numpy())
+        # plt.show()
 
         y = torch.mean(y_noisy_under, dim=1)
         
@@ -103,6 +120,9 @@ class BaseUnet(nn.Module):
         
 
     def forward(self, clean_img, noisy_img, simulate, a=None, b=None):
+        # plt.imshow(clean_img[0,0].cpu().detach().numpy(), cmap='gray')
+        # plt.show()
+
         mask = self.bernoullimask()
         # mask.register_hook(lambda grad: print('mask', grad))
         y = generate_measurement(clean_img, noisy_img, mask, simulate, a, b, self.num_captures)
@@ -110,8 +130,7 @@ class BaseUnet(nn.Module):
 
         zf = utils.hadamard_transform_torch(y, normalize=False)
         # zf.register_hook(lambda grad: print('inverse h', grad))
-        # plt.imshow(zf[0,0].cpu().detach().numpy())
-        # plt.colorbar()
+        # plt.imshow(zf[0,0].cpu().detach().numpy(), cmap='gray')
         # plt.show()
         # zf = utils.normalize(zf)
         # zf.register_hook(lambda grad: print('zf normalize', grad))

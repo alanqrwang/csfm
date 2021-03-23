@@ -36,13 +36,16 @@ class Parser(argparse.ArgumentParser):
         self.add_argument('--temp', type=float, default=0.8)
         self.add_argument('--lmbda', type=float, default=0.5)
 
-        self.add_argument('--mask_type', type=str, choices=['learned', 'random', 'equispaced'], help='arch of model')
+        self.add_argument('--force_date', type=str, default=None, help='Force learning rate')
+        self.add_argument('--mask_type', type=str, choices=['learned', 'random', 'equispaced', 'uniform', 'halfhalf'], help='arch of model')
         self.add_argument('--mask_dist', type=str, choices=['normal', 'bernoulli'], help='arch of model')
         utils.add_bool_arg(self, 'simulate')
 
     def parse(self):
         args = self.parse_args()
         date = '{}'.format(time.strftime('%b_%d'))
+        if args.force_date:
+            date = args.force_date
         args.run_dir = os.path.join(args.models_dir, args.filename_prefix, date, \
             f'{args.model}_'\
             f'captures{args.captures}_'\

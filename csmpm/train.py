@@ -139,6 +139,8 @@ def train(network, dataloader, criterion, optimizer, conf):
             a = None
             b = None
         
+        # plt.imshow(clean_img[0,0].cpu().detach().numpy())
+        # plt.show()
         optimizer.zero_grad()
         with torch.set_grad_enabled(True):
             recon, mask = network(clean_img, noisy_img, conf['simulate'], a, b)
