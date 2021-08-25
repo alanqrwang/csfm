@@ -1,9 +1,8 @@
-# Joint Optimization of Hadamard Sensing and Reconstruction in Compressed Sensing Fluorescence Microscopy (MICCAI 2021)
-Alan Q. Wang, Aaron K. LaViolette, Leo Moon, Chris Xu, and Mert R. Sabuncu.
+# Compressed Sensing Fluorescence Microscopy (MICCAI 2021)
 
-[Link to paper](https://arxiv.org/abs/2105.07961)
+Code for MICCAI 2021 paper "Joint Optimization of Hadamard Sensing and Reconstruction in Compressed Sensing Fluorescence Microscopy", [arXiv.2105.07961](https://arxiv.org/abs/2105.07961).
 
-This repository runs code for the above paper on the publicly-available FMD dataset.
+This repository runs code for the above paper on the publicly-available [FMD dataset](https://github.com/yinhaoz/denoising-fluorescence).
 
 ## Data
 Download FMD Dataset from https://github.com/yinhaoz/denoising-fluorescence and put the root folder in `denoising-fluorescent/`
