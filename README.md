@@ -1,4 +1,7 @@
-# Compressed Sensing Fluorescent Microscopy
+# Joint Optimization of Hadamard Sensing and Reconstruction in Compressed Sensing Fluorescence Microscopy (MICCAI 2021)
+Alan Q. Wang, Aaron K. LaViolette, Leo Moon, Chris Xu, and Mert R. Sabuncu.
+
+[Link to paper](https://arxiv.org/abs/2105.07961)
 
 ## Data
 Download FMD Dataset from https://github.com/yinhaoz/denoising-fluorescence and put the root folder in `denoising-fluorescent/`
