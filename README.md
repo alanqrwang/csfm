@@ -21,8 +21,8 @@ Model checkpoints and other arguments are saved to `out/`.
 ## Dependencies
 Code was ran on:
 
-python 3.7.10
-pytorch 1.4.0
-tqdm 4.60.0
-numpy 1.19.2
-torchvision 0.5.0
+- python 3.7.10
+- pytorch 1.4.0
+- tqdm 4.60.0
+- numpy 1.19.2
+- torchvision 0.5.0
