@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from csmpm import utils, data, model
+from csfm import utils, data, model
 import argparse
 import os
 import time
