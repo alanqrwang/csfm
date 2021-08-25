@@ -14,8 +14,9 @@ class Parser(argparse.ArgumentParser):
     def __init__(self):
         super(Parser, self).__init__(description='CSFM')
         # data
-        self.add_argument('--data-root', type=str,
-                          default='denoising-fluorescent/', help='directory to dataset root')
+        # self.add_argument('--data-root', type=str,
+        #                   default='denoising-fluorescent/', help='directory to dataset root')
+        self.add_argument('--data-root', type=str, default='/share/sablab/nfs02/users/aw847/data/denoising-fluorescent/', help='directory to dataset root')
         self.add_argument('--imsize', type=int, default=256)
         self.add_argument('--captures', type=int, default=50,
                           help='# captures per group')
