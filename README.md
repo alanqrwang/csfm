@@ -2,6 +2,7 @@
 Alan Q. Wang, Aaron K. LaViolette, Leo Moon, Chris Xu, and Mert R. Sabuncu.
 
 [Link to paper](https://arxiv.org/abs/2105.07961)
+This repository runs code for the above paper on the publicly-available FMD dataset.
 
 ## Data
 Download FMD Dataset from https://github.com/yinhaoz/denoising-fluorescence and put the root folder in `denoising-fluorescent/`
@@ -14,3 +15,5 @@ Download FMD Dataset from https://github.com/yinhaoz/denoising-fluorescence and 
 
 ### Example
 `python scripts/run.py -fp example --mask_type learned`
+
+Model checkpoints and other arguments are saved to `out/`.
