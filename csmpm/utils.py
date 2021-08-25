@@ -38,6 +38,7 @@ def h_plus(img, normalize=False):
         return 1/(2*math.sqrt(n1*n2)) * (torch.ones_like(img)*torch.sum(img) + hadamard_transform_torch(img, normalize=False))
     else:
         return 1/2 * (torch.ones_like(img)*torch.sum(img) + hadamard_transform_torch(img, normalize=False))
+
 def h_minus(img, normalize=False):
     '''Unnormalized H^-'''
     b, nc, n1, n2 = img.shape
@@ -182,23 +183,3 @@ def add_bool_arg(parser, name, default=True):
     group.add_argument('--' + name, dest=name, action='store_true')
     group.add_argument('--no_' + name, dest=name, action='store_false')
     parser.set_defaults(**{name:default})
-
-def create_2d_sequency_mask(mask):
-    '''2d natural to 2d sequency order'''
-    seq = np.load('/nfs02/users/aw847/data/fluorescentmicroscopy/256x256_2d_seq_indices.npy').astype(int)
-    reordered_mask = np.zeros(mask.shape)
-    for i in range(mask.shape[1] * mask.shape[0]):
-        coord = seq[i,:]
-        reordered_mask[coord[0], coord[1]] = mask.flatten()[i]
-    return reordered_mask
-
-def create_2d_natural_mask(mask):
-    '''2d sequency to 2d natural order'''
-    seq = np.load('/nfs02/users/aw847/data/fluorescentmicroscopy/256x256_2d_seq_indices.npy').astype(int)
-    seq_1d = seq[:,0] * 256 + seq[:,1]
-    had_1d = np.argsort(seq_1d)
-    had_2d = np.unravel_index(had_1d, (256, 256))
-    reordered_mask = np.zeros(mask.shape)
-    for i in range(mask.shape[1] * mask.shape[0]):
-        reordered_mask[had_2d[0][i], had_2d[1][i]] = mask.flatten()[i]
-    return reordered_mask
