@@ -89,7 +89,16 @@ def normalize(arr):
             return (arr - torch.min(arr)) / (torch.max(arr) - torch.min(arr))
 
 ######### Saving checkpoints ############
-
+def load_checkpoint(model, path, optimizer=None, suppress=False):
+    if not suppress:
+        print('Loading checkpoint from', path)
+    checkpoint = torch.load(path, map_location=torch.device('cpu'))
+    model.load_state_dict(checkpoint['state_dict'])
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        return model, optimizer
+    else:
+        return model
 
 def save_checkpoint(epoch, model_state, optimizer_state, loss, val_loss, model_folder, scheduler=None):
     state = {
