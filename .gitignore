@@ -1,0 +1,5 @@
+out/
+*.sh
+__pycache__/
+job_err/
+job_out/
