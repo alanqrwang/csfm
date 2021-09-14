@@ -43,6 +43,8 @@ class Parser(argparse.ArgumentParser):
 
         self.add_argument('--mask_type', type=str, choices=[
                           'learned', 'random', 'equispaced', 'uniform', 'halfhalf'], help='arch of model')
+        self.add_argument('--normal_std', type=float, default=0,
+                          help='Standard deviation for additive Gaussian noise')
 
     def parse(self):
         args = self.parse_args()
@@ -51,7 +53,9 @@ class Parser(argparse.ArgumentParser):
                                     f'captures{args.captures}_'
                                     f'bs{args.batch_size}_lr{args.lr}_'
                                     f'accelrate{args.accelrate}_'f'masktype{args.mask_type}_'
-                                    f'nh{args.unet_hidden}')
+                                    f'nh{args.unet_hidden}_'
+                                    f'std{args.normal_std}'
+                                    )
         args.ckpt_dir = os.path.join(args.run_dir, 'checkpoints')
 
         model_folder = args.ckpt_dir
@@ -100,12 +104,24 @@ def trainer(conf):
 
         print('Train loss: {:04f}, Val loss: {:04f}'.format(
             train_epoch_loss, val_epoch_loss))
+
+        utils.save_loss(epoch, train_epoch_loss,
+                        val_epoch_loss, conf['filename'])
         if epoch % conf['log_interval'] == 0:
             utils.save_checkpoint(epoch, network.state_dict(), optimizer.state_dict(),
                                   train_epoch_loss, val_epoch_loss, conf['filename'])
-            utils.save_loss(epoch, train_epoch_loss,
-                            val_epoch_loss, conf['filename'])
 
+def prepare_batch(datum, conf):
+    noisy_img, clean_img = datum
+    _, frames, _, c, h, w = noisy_img.shape
+    noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
+    noisy_img = noisy_img.float().to(
+        conf['device']).view(-1, frames, c, h, w)
+    clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+
+    # Add Guassian noise
+    noisy_img = noisy_img + torch.normal(0, conf['normal_std'], size=noisy_img.shape).to(conf['device'])
+    return noisy_img, clean_img
 
 def train(network, dataloader, criterion, optimizer, conf):
     """Train for one epoch.
@@ -121,14 +137,8 @@ def train(network, dataloader, criterion, optimizer, conf):
     epoch_loss = 0
     epoch_samples = 0
 
-    for _, datum in tqdm(enumerate(dataloader), total=len(dataloader)):
-        noisy_img, clean_img = datum
-        _, frames, _, c, h, w = noisy_img.shape
-        noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
-        noisy_img = noisy_img.float().to(
-            conf['device']).view(-1, frames, c, h, w)
-        clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
-
+    for batch in tqdm(dataloader, total=len(dataloader)):
+        noisy_img, clean_img = prepare_batch(batch, conf)
         optimizer.zero_grad()
         with torch.set_grad_enabled(True):
             recon = network(noisy_img)
@@ -158,13 +168,8 @@ def eval(network, dataloader, criterion, conf):
     epoch_loss = 0
     epoch_samples = 0
 
-    for _, datum in tqdm(enumerate(dataloader), total=len(dataloader)):
-        noisy_img, clean_img = datum
-        _, frames, _, c, h, w = noisy_img.shape
-        noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
-        noisy_img = noisy_img.float().to(
-            conf['device']).view(-1, frames, c, h, w)
-        clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+    for batch in tqdm(dataloader, total=len(dataloader)):
+        noisy_img, clean_img = prepare_batch(batch, conf)
         with torch.set_grad_enabled(False):
             recon = network(noisy_img)
             clean_img = utils.normalize(clean_img)
