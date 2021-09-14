@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torchvision import transforms
 import numpy as np
 import os
@@ -13,8 +14,7 @@ from hyperrecon.loss.losses import compose_loss_seq
 from hyperrecon.util.metric import bpsnr, bssim, bhfen, dice, bmae, bwatson
 from hyperrecon.model.unet import HyperUnet
 from hyperrecon.model.layers import ClipByPercentile
-from hyperrecon.data.mask import get_mask
-from hyperrecon.data.brain import ArrDataset, SliceDataset, SliceVolDataset, get_train_data, get_train_gt
+from csfm.data import fmd
 
 
 class BaseTrain(object):
@@ -27,14 +27,12 @@ class BaseTrain(object):
     self.topK = args.topK
     self.method = args.method
     self.anneal = args.anneal
-    self.range_restrict = args.range_restrict
     self.loss_list = args.loss_list
     self.num_hparams = len(self.loss_list) - 1 if self.range_restrict else len(self.loss_list)
     self.num_coeffs = len(self.loss_list)
     # ML
     self.num_epochs = args.num_epochs
     self.lr = args.lr
-    self.force_lr = args.force_lr
     self.batch_size = args.batch_size
     self.num_steps_per_epoch = args.num_steps_per_epoch
     self.arr_dataset = args.arr_dataset
@@ -109,55 +107,36 @@ class BaseTrain(object):
     self.network = self.get_model()
     self.optimizer = self.get_optimizer()
     self.scheduler = self.get_scheduler()
-    self.losses = compose_loss_seq(self.loss_list, self.mask, self.device)
+    self.criterion = self.get_criterion()
 
     if self.force_lr is not None:
       for param_group in self.optimizer.param_groups:
         param_group['lr'] = self.force_lr
 
   def get_dataloader(self):
-    if self.arr_dataset:
-      xdata = get_train_data(maskname=self.undersampling_rate)
-      gt_data = get_train_gt()
-      trainset = ArrDataset(
-        xdata[:int(len(xdata)*0.8)], gt_data[:int(len(gt_data)*0.8)])
-      valset = ArrDataset(
-        xdata[int(len(xdata)*0.8):], gt_data[int(len(gt_data)*0.8):])
-    else:
-      transform = transforms.Compose([ClipByPercentile()])
-      trainset = SliceDataset(
-        self.data_path, 'train', total_subjects=self.num_train_subjects, transform=transform)
-      valset = SliceDataset(
-        self.data_path, 'validate', total_subjects=self.num_val_subjects, transform=transform)
-      testset = SliceVolDataset(
-        self.data_path, 'validate', total_subjects=self.num_val_subjects, transform=transform,
-        subsample=False)
+    self.train_loader = fmd.load_denoising(conf['data_root'], train=True, 
+        batch_size=conf['batch_size'], get_noisy=not conf['simulate'],
+        types=None, captures=conf['captures'],
+        transform=None, target_transform=None, 
+        patch_size=conf['imsize'], test_fov=19)
 
-    self.train_loader = torch.utils.data.DataLoader(trainset, 
-          batch_size=self.batch_size,
-          shuffle=True,
-          num_workers=0,
-          pin_memory=True)
-    self.val_loader = torch.utils.data.DataLoader(valset,
-          batch_size=self.batch_size*2,
-          shuffle=False,
-          num_workers=0,
-          pin_memory=True)
-    self.test_loader = torch.utils.data.DataLoader(testset,
-          batch_size=1,
-          shuffle=False,
-          num_workers=0,
-          pin_memory=True)
+    if conf['simulate']:
+        self.val_loader = fmd.load_denoising_test_mix(conf['data_root'], 
+            batch_size=conf['batch_size'], get_noisy=False, 
+            transform=None, patch_size=conf['imsize'])
+    else:
+        self.val_loader = fmd.load_denoising(conf['data_root'], train=False, 
+            batch_size=conf['batch_size'], get_noisy=True, 
+            types=None, captures=conf['captures'],
+            transform=None, target_transform=None, 
+            patch_size=conf['imsize'], test_fov=19)
 
   def get_model(self):
-    self.network = HyperUnet(
-      self.num_coeffs,
-      self.hnet_hdim,
-      in_ch_main=self.n_ch_in,
-      out_ch_main=self.n_ch_out,
-      h_ch_main=self.unet_hdim,
-      use_batchnorm=self.use_batchnorm
-    ).to(self.device)
+    if conf['model'] == 'unet':
+        self.network = BaseUnet(conf['device'], conf['mask_dist'], conf['mask_type'], \
+                conf['imsize'], conf['accelrate'], conf['captures'], conf['unet_hidden']).to(conf['device'])
+    else:
+        self.network = HQSNet(K=5, mask=conf['mask'], lmbda=0, device=conf['device']).to(conf['device'])
     utils.summary(self.network)
     return self.network
 
@@ -171,6 +150,9 @@ class BaseTrain(object):
     return torch.optim.lr_scheduler.StepLR(self.optimizer,
                          step_size=self.scheduler_step_size,
                          gamma=self.scheduler_gamma)
+
+  def get_criterion(self):
+    return nn.MSELoss()
 
   def train(self):
     self.train_begin()
@@ -315,37 +297,6 @@ class BaseTrain(object):
       utils.save_checkpoint(self.epoch, self.network, self.optimizer,
                   self.ckpt_dir, self.scheduler)
 
-  def compute_loss(self, pred, gt, y, coeffs):
-    '''Compute loss.
-
-    Args:
-      pred: Predictions (bs, nch, n1, n2)
-      gt: Ground truths (bs, nch, n1, n2)
-      y: Under-sampled k-space (bs, nch, n1, n2)
-      coeffs: Loss coefficients (bs, num_losses)
-
-    Returns:
-      loss: Per-sample loss (bs)
-    '''
-    assert len(self.losses) == coeffs.shape[1], 'loss and coeff mismatch'
-    loss = 0
-    for i in range(len(self.losses)):
-      c = coeffs[:, i]
-      l = self.losses[i]
-      loss += c * l(pred, gt, y)
-    return loss
-
-  def process_loss(self, loss):
-    '''Process loss.
-
-    Args:
-      loss: Per-sample loss (bs)
-
-    Returns:
-      Scalar loss value
-    '''
-    return loss.mean()
-
   def prepare_batch(self, batch, is_training=True):
     targets, segs = batch[0].float().to(self.device), batch[1].float().to(self.device)
     if not is_training:
@@ -359,10 +310,6 @@ class BaseTrain(object):
 
   def inference(self, zf, coeffs):
     return self.network(zf, coeffs)
-
-  def sample_hparams(self, num_samples):
-    '''Samples hyperparameters from distribution.'''
-    pass
 
   def generate_coefficients(self, samples):
     '''Generates coefficients from samples.'''
