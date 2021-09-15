@@ -1,0 +1,6 @@
+*.err
+*.out
+*.sh
+*.pkl
+*.txt
+*.h5
