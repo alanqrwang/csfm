@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from csmpm import utils, train, data, model
+from csfm import utils, train, data, model
 import argparse
 import os
 import time
@@ -9,7 +9,7 @@ import json
 
 class Parser(argparse.ArgumentParser):
     def __init__(self):
-        super(Parser, self).__init__(description='DnCNN')
+        super(Parser, self).__init__(description='CSFM')
         # data 
         self.add_argument('--data-root', type=str, default='/nfs02/users/aw847/data/denoising-fluorescent/', help='directory to dataset root')
         self.add_argument('--imsize', type=int, default=256)
