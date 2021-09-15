@@ -4,11 +4,10 @@ For more details, please read:
     Alan Q. Wang, Adrian V. Dalca, and Mert R. Sabuncu. 
     "Regularization-Agnostic Compressed Sensing MRI with Hypernetworks" 
 """
-from . import utils, undersamplemask
-from . import layers
+from csfm.util import utils
+from csfm.model import layers, undersamplemask
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
 
 
 def generate_measurement(gt, noisy, mask, simulate, a, b, num_captures):

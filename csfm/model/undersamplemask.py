@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-# import matplotlib.pyplot as plt
 
-from . import layers, utils
+from csfm.util import utils
 
 class NormalMask(nn.Module):
     def __init__(self, mask_type, image_dims, device):
