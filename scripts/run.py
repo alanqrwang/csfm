@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import numpy as np
 from csfm import utils, data, model
 import argparse
 import os
@@ -31,7 +30,7 @@ class Parser(argparse.ArgumentParser):
                           help='Learning rate')
         self.add_argument('--batch_size', type=int,
                           default=8, help='Batch size')
-        self.add_argument('--epochs', type=int, default=100,
+        self.add_argument('--num_epochs', type=int, default=100,
                           help='Total training epochs')
         self.add_argument('--load_checkpoint', type=int, default=0,
                           help='Load checkpoint at specificed epoch')
@@ -43,18 +42,31 @@ class Parser(argparse.ArgumentParser):
 
         self.add_argument('--mask_type', type=str, choices=[
                           'learned', 'random', 'equispaced', 'uniform', 'halfhalf'], help='arch of model')
-        self.add_argument('--normal_std', type=float, default=0,
-                          help='Standard deviation for additive Gaussian noise')
+        self.add_argument('--poisson_const', type=float, default=None,
+                          help='Constant to add for Poisson noise')
+        self.add_bool_arg('add_poisson_noise', default=False)
 
+    def add_bool_arg(self, name, default=True):
+        """Add boolean argument to argparse parser"""
+        group = self.add_mutually_exclusive_group(required=False)
+        group.add_argument('--' + name, dest=name, action='store_true')
+        group.add_argument('--no_' + name, dest=name, action='store_false')
+        self.set_defaults(**{name: default})
+
+    def validate_args(self, args):
+        if args.add_poisson_noise:
+          assert args.poisson_const is not None, 'Must set poisson constant'
+          
     def parse(self):
         args = self.parse_args()
+        self.validate_args(args)
         date = '{}'.format(time.strftime('%b_%d'))
         args.run_dir = os.path.join(args.models_dir, args.filename_prefix, date,
                                     f'captures{args.captures}_'
                                     f'bs{args.batch_size}_lr{args.lr}_'
                                     f'accelrate{args.accelrate}_'f'masktype{args.mask_type}_'
                                     f'nh{args.unet_hidden}_'
-                                    f'std{args.normal_std}'
+                                    f'std{args.poisson_const}'
                                     )
         args.ckpt_dir = os.path.join(args.run_dir, 'checkpoints')
 
@@ -95,8 +107,8 @@ def trainer(conf):
     criterion = nn.MSELoss()
 
     # Training loop
-    for epoch in range(conf['load_checkpoint']+1, conf['epochs']+1):
-        print('\nEpoch %d/%d' % (epoch, conf['epochs']))
+    for epoch in range(conf['load_checkpoint']+1, conf['num_epochs']+1):
+        print('\nEpoch %d/%d' % (epoch, conf['num_epochs']))
 
         network, optimizer, train_epoch_loss = train(
             network, loader, criterion, optimizer, conf)
@@ -119,8 +131,9 @@ def prepare_batch(datum, conf):
         conf['device']).view(-1, frames, c, h, w)
     clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
 
-    # Add Guassian noise
-    noisy_img = noisy_img + torch.normal(0, conf['normal_std'], size=noisy_img.shape).to(conf['device'])
+    if conf['add_poisson_noise']:
+      # Add Poisson noise
+      noisy_img = torch.poisson(noisy_img + conf['poisson_const'])
     return noisy_img, clean_img
 
 def train(network, dataloader, criterion, optimizer, conf):
