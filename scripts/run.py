@@ -25,6 +25,8 @@ class Parser(argparse.ArgumentParser):
                           help='filename prefix', required=True)
         self.add_argument('--models_dir', default='out/',
                           type=str, help='directory to save models')
+        self.add_argument('--date', required=True,
+                          type=str, help='Date')
 
         self.add_argument('--lr', type=float, default=1e-3,
                           help='Learning rate')
@@ -60,7 +62,7 @@ class Parser(argparse.ArgumentParser):
     def parse(self):
         args = self.parse_args()
         self.validate_args(args)
-        date = '{}'.format(time.strftime('%b_%d'))
+        date = args.date if args.date is not None else '{}'.format(time.strftime('%b_%d'))
         args.run_dir = os.path.join(args.models_dir, args.filename_prefix, date,
                                     f'captures{args.captures}_'
                                     f'bs{args.batch_size}_lr{args.lr}_'
