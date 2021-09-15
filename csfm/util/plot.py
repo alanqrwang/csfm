@@ -63,7 +63,7 @@ def plot_img(img, title=None, ax=None, rot90=False, ylabel=None, xlabel=None, vl
 def get_learned_mask(ckpt_path, accelrate, mask_type, device, nh=64):
     print(ckpt_path)
     model_path = sorted(glob(ckpt_path))[-1]
-    network = Unet(device, 'bernoulli', mask_type, 256, accelrate, 50, nh=nh).to(device) 
+    network = Unet(nh=nh).to(device) 
     network = utils.load_checkpoint(network, model_path, suppress=True)
     network.eval()
     
