@@ -15,4 +15,5 @@ if __name__ == "__main__":
   os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu_id)
 
   trainer = train_and_eval_lib.get_trainer(args)
+  trainer.config()
   trainer.train()

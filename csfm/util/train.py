@@ -1,214 +1,203 @@
 import os
 import numpy as np
 from tqdm import tqdm
+import random
 import torch
 import torch.nn as nn
 from csfm.util import utils
-from csfm.model.model import Unet, HQSNet
+from csfm.model.unet import Unet
+from csfm.model.hqsnet import HQSNet
 from csfm.data import fmd
 
 class BaseTrain(object):
   def __init__(self, args):
-    self.conf = vars(args)
+    self.device = args.device
+    self.seed = args.seed
+    self.run_dir = args.run_dir
+    self.data_dir = args.data_dir
+    self.imsize = args.imsize
+    self.in_channels = args.in_channels
+    self.out_channels = args.out_channels
+    self.transform = args.transform
+    self.noise_levels_train = args.noise_levels_train
+    self.noise_levels_test = args.noise_levels_test
+    self.captures = args.captures
+    self.accelrate = args.accelrate
+    self.arch = args.arch
+    self.date = args.date
+    self.lr = args.lr
+    self.batch_size = args.batch_size
+    self.num_epochs = args.num_epochs
+    self.load_checkpoint = args.load_checkpoint
+    self.log_interval = args.log_interval
+    self.gpu_id = args.gpu_id
+    self.unet_hidden = args.unet_hidden
+    self.temp = args.temp
+    self.lmbda = args.lmbda
+
+    self.mask_type = args.mask_type
+    self.mask_dist = args.mask_dist
+    self.method = args.method
+    self.simulate = args.simulate
+    self.poisson_const = args.poisson_const
+    self.add_poisson_noise = args.add_poisson_noise
+
+  def set_random_seed(self):
+    seed = self.seed
+    if seed > 0:
+      random.seed(seed)
+      np.random.seed(seed)
+      torch.manual_seed(seed)
+
+  def config(self):
+    self.set_random_seed()
+
+    self.get_dataloader()
+    self.network = self.get_model()
+    self.optimizer = self.get_optimizer()
+    self.scheduler = self.get_scheduler()
+    self.criterion = self.get_criterion()
+
+  def get_model(self):
+    if self.arch == 'unet':
+      return Unet(self.device, self.mask_dist, self.mask_type, \
+          self.imsize, self.accelrate, self.captures, self.unet_hidden).to(self.device)
+    else:
+      return HQSNet(K=5, mask=self.mask, lmbda=0, device=self.device).to(self.device)
+  
+  def get_optimizer(self):
+    return torch.optim.Adam(self.network.parameters(), lr=self.lr)
+  
+  def get_scheduler(self):
+    return None
+  
+  def get_criterion(self):
+    return nn.MSELoss()
+
+  def get_dataloader(self):
+    self.train_loader = fmd.load_denoising(self.data_dir, train=True, 
+      batch_size=self.batch_size, get_noisy=not self.simulate,
+      types=None, captures=self.captures,
+      transform=None, target_transform=None, 
+      patch_size=self.imsize, test_fov=19)
+
+    if self.simulate:
+      self.val_loader = fmd.load_denoising_test_mix(self.data_dir, 
+        batch_size=self.batch_size, get_noisy=False, 
+        transform=None, patch_size=self.imsize)
+    else:
+      self.val_loader = fmd.load_denoising(self.data_dir, train=False, 
+        batch_size=self.batch_size, get_noisy=True, 
+        types=None, captures=self.captures,
+        transform=None, target_transform=None, 
+        patch_size=self.imsize, test_fov=19)
+
+  def train_begin(self):
+    # Directories to save information
+    self.ckpt_dir = os.path.join(self.run_dir, 'checkpoints')
+    if not os.path.exists(self.ckpt_dir):
+      os.makedirs(self.ckpt_dir)
 
   def train(self):
-    """Training loop. 
-
-    Handles model, optimizer, loss, and sampler generation.
-    Handles data loading. Handles i/o and checkpoint loading.
-      
-
-    Parameters
-    ----------
-    xdata : numpy.array (N, img_height, img_width, 2)
-      Dataset of under-sampled measurements
-    gt_data : numpy.array (N, img_height, img_width, 2)
-      Dataset of fully-sampled images
-    conf : dict
-      Miscellaneous parameters
-
-    Returns
-    ----------
-    network : regagcsmri.UNet
-      Main network and hypernetwork
-    optimizer : torch.optim.Adam
-      Adam optimizer
-    epoch_loss : float
-      Loss for this epoch
-    """
-    ###############  Dataset ########################
-    loader = fmd.load_denoising(self.conf['data_root'], train=True, 
-      batch_size=self.conf['batch_size'], get_noisy=not self.conf['simulate'],
-      types=None, captures=self.conf['captures'],
-      transform=None, target_transform=None, 
-      patch_size=self.conf['imsize'], test_fov=19)
-
-    if self.conf['simulate']:
-      val_loader = fmd.load_denoising_test_mix(self.conf['data_root'], 
-        batch_size=self.conf['batch_size'], get_noisy=False, 
-        transform=None, patch_size=self.conf['imsize'])
-    else:
-      val_loader = fmd.load_denoising(self.conf['data_root'], train=False, 
-        batch_size=self.conf['batch_size'], get_noisy=True, 
-        types=None, captures=self.conf['captures'],
-        transform=None, target_transform=None, 
-        patch_size=self.conf['imsize'], test_fov=19)
-    ##################################################
-
-    ##### Model, Optimizer, Loss ############
-    if self.conf['model'] == 'unet':
-      network = Unet(self.conf['device'], self.conf['mask_dist'], self.conf['mask_type'], \
-          self.conf['imsize'], self.conf['accelrate'], self.conf['captures'], self.conf['unet_hidden']).to(self.conf['device'])
-    else:
-      network = HQSNet(K=5, mask=self.conf['mask'], lmbda=0, device=self.conf['device']).to(self.conf['device'])
-
-    optimizer = torch.optim.Adam(network.parameters(), lr=self.conf['lr'])
-    if self.conf['force_lr'] is not None:
-      for param_group in optimizer.param_groups:
-        param_group['lr'] = self.conf['force_lr']
-
-    criterion = nn.MSELoss()
-    ##################################################
+    '''Training loop.'''
 
     ############ Checkpoint Loading ##################
-    if self.conf['load_checkpoint'] != 0:
-      pretrain_path = os.path.join(self.conf['filename'], 'model.{epoch:04d}.h5'.format(epoch=self.conf['load_checkpoint']))
-      network, optimizer = utils.load_checkpoint(network, pretrain_path, optimizer)
+    if self.load_checkpoint != 0:
+      pretrain_path = os.path.join(self.filename, 'model.{epoch:04d}.h5'.format(epoch=self.load_checkpoint))
+      self.network, self.optimizer = utils.load_checkpoint(self.network, pretrain_path, self.optimizer)
     ##################################################
 
-    ############## Training loop #####################
-    for epoch in range(self.conf['load_checkpoint']+1, self.conf['num_epochs']+1):
-      print('\nEpoch %d/%d' % (epoch, self.conf['num_epochs']))
+    self.train_begin()
+    for epoch in range(self.load_checkpoint+1, self.num_epochs+1):
+      print('\nEpoch %d/%d' % (epoch, self.num_epochs))
     
-      # Train
-      network, optimizer, train_epoch_loss, train_epoch_psnr = self.train_epoch(network, loader, criterion, optimizer)
-      # Validate
-      network, val_epoch_loss, val_epoch_psnr = self.eval_epoch(network, val_loader, criterion)
+      train_epoch_loss, train_epoch_psnr = self.train_epoch()
+      val_epoch_loss, val_epoch_psnr = self.eval_epoch()
+      print("train loss={:.6f}, train psnr={:.6f}".format(train_epoch_loss, train_epoch_psnr))
+      print("val loss={:.6f}, val psnr={:.6f}".format(val_epoch_loss, val_epoch_psnr))
+
       # Save checkpoints
-      print(train_epoch_psnr, val_epoch_psnr)
-      utils.save_loss(epoch, train_epoch_loss, val_epoch_loss, self.conf['filename'])
-      utils.save_loss(epoch, train_epoch_psnr, val_epoch_psnr, self.conf['filename'], 'psnr')
-      if epoch % self.conf['log_interval'] == 0:
-        utils.save_checkpoint(epoch, network.state_dict(), optimizer.state_dict(), \
-            train_epoch_loss, val_epoch_loss, self.conf['filename'])
+      utils.save_loss(epoch, train_epoch_loss, val_epoch_loss, self.run_dir)
+      utils.save_loss(epoch, train_epoch_psnr, val_epoch_psnr, self.run_dir, 'psnr')
+      if epoch % self.log_interval == 0:
+        utils.save_checkpoint(epoch, self.network.state_dict(), self.optimizer.state_dict(), \
+            train_epoch_loss, val_epoch_loss, self.ckpt_dir)
 
   def prepare_batch(self, datum):
-    if self.conf['simulate']:
+    if self.simulate:
       clean_img, a, b = datum
       bs, ncrops, c, h, w = clean_img.shape
-      clean_img = clean_img.float().to(self.conf['device']).view(-1, c, h, w)
+      clean_img = clean_img.float().to(self.device).view(-1, c, h, w)
       noisy_img = None
-      a = a.float().to(self.conf['device']).view(-1)
-      b = b.float().to(self.conf['device']).view(-1)
+      a = a.float().to(self.device).view(-1)
+      b = b.float().to(self.device).view(-1)
     else:
       noisy_img, clean_img = datum
       bs, frames, ncrops, c, h, w = noisy_img.shape
       noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
-      noisy_img = noisy_img.float().to(self.conf['device']).view(-1, frames, c, h, w)
-      clean_img = clean_img.float().to(self.conf['device']).view(-1, c, h, w)
+      noisy_img = noisy_img.float().to(self.device).view(-1, frames, c, h, w)
+      clean_img = clean_img.float().to(self.device).view(-1, c, h, w)
       a = None
       b = None
 
-    if self.conf['add_poisson_noise']:
+    if self.add_poisson_noise:
       # Add Poisson noise
-      noisy_img = torch.poisson(noisy_img + self.conf['poisson_const'])
+      noisy_img = torch.poisson(noisy_img + self.poisson_const)
     return noisy_img, clean_img, a, b
 
-  def train_epoch(self, network, dataloader, criterion, optimizer):
-    """Train for one epoch
-
-      Parameters
-      ----------
-      network : UNet
-        Main network and hypernetwork
-      dataloader : torch.utils.data.DataLoader
-        Training set dataloader
-      optimizer : torch.optim.Adam
-        Adam optimizer
-
-      Returns
-      ----------
-      network : UNet
-        Main network and hypernetwork
-      optimizer : torch.optim.Adam
-        Adam optimizer
-      epoch_loss : float
-        Loss for this epoch
-    """
-    network.train()
+  def train_epoch(self):
+    '''Train for one epoch'''
+    self.network.train()
 
     epoch_loss = 0
     epoch_samples = 0
     epoch_psnr = 0
 
-    for batch in tqdm(dataloader, total=len(dataloader)):
+    for batch in tqdm(self.train_loader, total=len(self.train_loader)):
       noisy_img, clean_img, a, b = self.prepare_batch(batch)
       
-      optimizer.zero_grad()
+      self.optimizer.zero_grad()
       with torch.set_grad_enabled(True):
-        recon, mask = network(clean_img, noisy_img, self.conf['simulate'], a, b)
+        recon, mask = self.network(clean_img, noisy_img, self.simulate, a, b)
         clean_img = utils.normalize(clean_img)
         recon = utils.normalize(recon)
-        if self.conf['mask_dist'] == 'normal':
-          loss = (1-self.conf['lmbda'])*criterion(recon, clean_img) + self.conf['lmbda']*torch.norm(mask)
+        if self.mask_dist == 'normal':
+          loss = (1-self.lmbda)*self.criterion(recon, clean_img) + self.lmbda*torch.norm(mask)
         else:
-          loss = criterion(recon, clean_img)
+          loss = self.criterion(recon, clean_img)
 
         loss.backward()
-        optimizer.step()
+        self.optimizer.step()
 
         epoch_loss += loss.data.cpu().numpy()
         epoch_psnr += np.sum(utils.get_metrics(clean_img.permute(0, 2, 3, 1), recon.permute(0, 2, 3, 1), 'psnr', False, normalized=False))
       epoch_samples += len(clean_img)
     epoch_loss /= epoch_samples
     epoch_psnr /= epoch_samples
-    return network, optimizer, epoch_loss, epoch_psnr
+    return epoch_loss, epoch_psnr
 
-  def eval_epoch(self, network, dataloader, criterion):
-    """Validate for one epoch
-
-      Parameters
-      ----------
-      network : regagcsmri.UNet
-        Main network and hypernetwork
-      dataloader : torch.utils.data.DataLoader
-        Training set dataloader
-      hpsampler : regagcsmri.HpSampler
-        Hyperparameter sampler
-      conf : dict
-        Miscellaneous parameters
-      topK : int or None
-        K for DHS sampling
-      epoch : int
-        Current training epoch
-
-      Returns
-      ----------
-      network : regagcsmri.UNet
-        Main network and hypernetwork
-      epoch_loss : float
-        Loss for this epoch
-    """
-    network.eval()
+  def eval_epoch(self):
+    '''Validate for one epoch'''
+    self.network.eval()
 
     epoch_loss = 0
     epoch_samples = 0
     epoch_psnr = 0
 
-    for batch in tqdm(dataloader, total=len(dataloader)):
+    for batch in tqdm(self.val_loader, total=len(self.val_loader)):
       noisy_img, clean_img, a, b = self.prepare_batch(batch)
       with torch.set_grad_enabled(False):
-        recon, mask = network(clean_img, noisy_img, self.conf['simulate'], a, b)
+        recon, mask = self.network(clean_img, noisy_img, self.simulate, a, b)
         clean_img = utils.normalize(clean_img)
         recon = utils.normalize(recon)
-        if self.conf['mask_dist'] == 'normal':
-          loss = (1-self.conf['lmbda'])*criterion(recon, clean_img) + self.conf['lmbda']*torch.norm(mask)
+        if self.mask_dist == 'normal':
+          loss = (1-self.lmbda)*self.criterion(recon, clean_img) + self.lmbda*torch.norm(mask)
         else:
-          loss = criterion(recon, clean_img)
+          loss = self.criterion(recon, clean_img)
 
         epoch_loss += loss.data.cpu().numpy()
         epoch_psnr += np.sum(utils.get_metrics(clean_img.permute(0, 2, 3, 1), recon.permute(0, 2, 3, 1), 'psnr', False, normalized=False))
       epoch_samples += len(clean_img)
     epoch_loss /= epoch_samples
     epoch_psnr /= epoch_samples
-    return network, epoch_loss, epoch_psnr
+    return epoch_loss, epoch_psnr

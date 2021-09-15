@@ -1,7 +1,7 @@
 import os
 import pickle
 from glob import glob
-from csfm.model import Unet
+from csfm.model.unet import Unet
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,7 +21,7 @@ def plotloss(model_dirs, labels=None, ylim=None, xlim=None):
   fig, axes = plt.subplots(1, 1)
   fig.set_size_inches(18.5, 10.5)
   for i, model_dir in enumerate(model_dirs):
-    pkl_path = os.path.join(model_dir, 'checkpoints', 'losses.pkl')
+    pkl_path = os.path.join(model_dir, 'losses.pkl')
     with (open(pkl_path, "rb")) as openfile:
       loss_dict = pickle.load(openfile)
     loss = loss_dict['loss']
@@ -62,23 +62,21 @@ def plot_img(img, title=None, ax=None, rot90=False, ylabel=None, xlabel=None, vl
 
 def get_learned_mask(ckpt_path, accelrate, mask_type, device, nh=64):
     print(ckpt_path)
-    models = [sorted(glob(ckpt_path))[-1]]
-#     models = sorted(glob.glob(ckpt_path))
-    for i, model_path in enumerate(models[::20]):
-        network = Unet(device, mask_type, 256, accelrate, 50, nh=nh).to(device) 
-        network = utils.load_checkpoint(network, model_path, suppress=True)
-        network.eval()
-        
-        pmask = network.bernoullimask.sparsify(network.bernoullimask.squash_mask(network.bernoullimask.pmask.data))
-        fmask = network.bernoullimask()
-        # Sum up Bernoulli realizations along the frame dimension
-        fmask = torch.sum(fmask, dim=0)[0]
+    model_path = sorted(glob(ckpt_path))[-1]
+    network = Unet(device, 'bernoulli', mask_type, 256, accelrate, 50, nh=nh).to(device) 
+    network = utils.load_checkpoint(network, model_path, suppress=True)
+    network.eval()
+    
+    pmask = network.bernoullimask.sparsify(network.bernoullimask.squash_mask(network.bernoullimask.pmask.data))
+    fmask = network.bernoullimask()
+    # Sum up Bernoulli realizations along the frame dimension
+    fmask = torch.sum(fmask, dim=0)[0]
 #         fmask_photons = photons_per_pixel(fmask)
-        h_numpy = pmask.cpu().detach().numpy()#[100:110, 100:110]
-        f_numpy = fmask.cpu().detach().numpy()#[100:110, 100:110]
+    h_numpy = pmask.cpu().detach().numpy()#[100:110, 100:110]
+    f_numpy = fmask.cpu().detach().numpy()#[100:110, 100:110]
 #         f_photon_numpy = fmask_photons.cpu().detach().numpy()
-        h_numpy_seq = utils.create_2d_sequency_mask(h_numpy)
-        f_numpy_seq = utils.create_2d_sequency_mask(f_numpy)
+    h_numpy_seq = utils.create_2d_sequency_mask(h_numpy)
+    f_numpy_seq = utils.create_2d_sequency_mask(f_numpy)
 
         # Photons per pixel
 #         fig, axes = plt.subplots(1, 2, figsize=(10, 6))
