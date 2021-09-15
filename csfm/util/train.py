@@ -8,6 +8,7 @@ from csfm.util import utils
 from csfm.model.unet import Unet
 from csfm.model.hqsnet import HQSNet
 from csfm.data import fmd
+from csfm.model import undersamplemask
 
 class BaseTrain(object):
   def __init__(self, args):
@@ -57,11 +58,11 @@ class BaseTrain(object):
     self.optimizer = self.get_optimizer()
     self.scheduler = self.get_scheduler()
     self.criterion = self.get_criterion()
+    self.masknet = self.get_masknet()
 
   def get_model(self):
     if self.arch == 'unet':
-      return Unet(self.device, self.mask_dist, self.mask_type, \
-          self.imsize, self.accelrate, self.captures, self.unet_hidden).to(self.device)
+      return Unet(self.unet_hidden).to(self.device)
     else:
       return HQSNet(K=5, mask=self.mask, lmbda=0, device=self.device).to(self.device)
   
@@ -73,6 +74,12 @@ class BaseTrain(object):
   
   def get_criterion(self):
     return nn.MSELoss()
+  
+  def get_masknet(self):
+    if self.mask_dist == 'bernoulli':
+      return undersamplemask.BernoulliFrameMask(self.mask_type, (self.imsize, self.imsize), self.device, self.captures, self.accelrate)
+    elif self.mask_dist == 'normal':
+      return undersamplemask.NormalMask(self.mask_type, (self.imsize, self.imsize), self.device)
 
   def get_dataloader(self):
     self.train_loader = fmd.load_denoising(self.data_dir, train=True, 
@@ -123,6 +130,50 @@ class BaseTrain(object):
         utils.save_checkpoint(epoch, self.network.state_dict(), self.optimizer.state_dict(), \
             train_epoch_loss, val_epoch_loss, self.ckpt_dir)
 
+  def generate_measurement(self, gt, noisy, mask, a, b):
+    '''Generates under-sampled measurement in Hadamard space
+
+    If bernoulli, then simulate a fixed acquisition time and take
+    num_captures realizations of the forward model. Then mask across
+    realizations and average pixel-wise
+
+    If normal, then mask directly encodes acquisition time
+    '''
+    if self.simulate:
+      assert len(mask) == self.captures, 'Should be Bernoulli mask'
+      assert a is not None and b is not None
+      # plus = utils.h_plus(gt / num_captures, normalize=False)
+      # minus = utils.h_minus(gt / num_captures, normalize=False)
+      plus = utils.h_plus(gt, normalize=False)
+      minus = utils.h_minus(gt, normalize=False)
+      
+      plus = plus.unsqueeze(1).repeat(1, self.captures, 1, 1, 1)
+      minus = minus.unsqueeze(1).repeat(1, self.captures, 1, 1, 1)
+      
+      a = a.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+      b = b.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+      a_inv = torch.reciprocal(a)
+
+      noisy_plus = torch.poisson(a_inv * plus)
+      noisy_minus = torch.poisson(a_inv * minus)
+
+      frames = a*noisy_plus - a*noisy_minus + torch.normal(0, std=b) - torch.normal(0, std=b)
+
+      y_noisy_under = frames * mask
+
+      y = torch.mean(y_noisy_under, dim=1)
+
+    else:
+      assert noisy is not None
+      batch_size, tot_frames, nc, n1, n2 = noisy.shape
+
+      y_noisy_frames = utils.hadamard_transform_torch(noisy.view(-1, nc, n1, n2)).view(noisy.shape)
+      y_noisy_under = y_noisy_frames * mask
+
+      y = torch.mean(y_noisy_under, dim=1)
+    
+    return y
+
   def prepare_batch(self, datum):
     if self.simulate:
       clean_img, a, b = datum
@@ -155,10 +206,12 @@ class BaseTrain(object):
 
     for batch in tqdm(self.train_loader, total=len(self.train_loader)):
       noisy_img, clean_img, a, b = self.prepare_batch(batch)
-      
+      mask = self.masknet()
+      y = self.generate_measurement(clean_img, noisy_img, mask, a, b)
+
       self.optimizer.zero_grad()
       with torch.set_grad_enabled(True):
-        recon, mask = self.network(clean_img, noisy_img, self.simulate, a, b)
+        recon = self.network(y)
         clean_img = utils.normalize(clean_img)
         recon = utils.normalize(recon)
         if self.mask_dist == 'normal':
@@ -186,8 +239,11 @@ class BaseTrain(object):
 
     for batch in tqdm(self.val_loader, total=len(self.val_loader)):
       noisy_img, clean_img, a, b = self.prepare_batch(batch)
+      mask = self.masknet()
+      y = self.generate_measurement(clean_img, noisy_img, mask, a, b)
+
       with torch.set_grad_enabled(False):
-        recon, mask = self.network(clean_img, noisy_img, self.simulate, a, b)
+        recon = self.network(y)
         clean_img = utils.normalize(clean_img)
         recon = utils.normalize(recon)
         if self.mask_dist == 'normal':
