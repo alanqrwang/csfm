@@ -8,7 +8,6 @@ import torch
 import numpy as np
 import os
 import pickle
-import glob
 import myutils
 import math
 
@@ -130,21 +129,20 @@ def load_checkpoint(model, path, optimizer=None, suppress=False):
     else:
         return model
 
-def save_checkpoint(epoch, model_state, optimizer_state, loss, val_loss, model_folder, log_interval, scheduler=None):
-    if epoch % log_interval == 0:
-        state = {
-            'epoch': epoch,
-            'state_dict': model_state,
-            'optimizer' : optimizer_state,
-            'loss': loss,
-            'val_loss': val_loss
-        }
-        if scheduler is not None:
-            state['scheduler'] = scheduler.state_dict(),
+def save_checkpoint(epoch, model_state, optimizer_state, loss, val_loss, model_folder, scheduler=None):
+    state = {
+        'epoch': epoch,
+        'state_dict': model_state,
+        'optimizer' : optimizer_state,
+        'loss': loss,
+        'val_loss': val_loss
+    }
+    if scheduler is not None:
+        state['scheduler'] = scheduler.state_dict(),
 
-        filename = os.path.join(model_folder, 'model.{epoch:04d}.h5')
-        torch.save(state, filename.format(epoch=epoch))
-        print('Saved checkpoint to', filename.format(epoch=epoch))
+    filename = os.path.join(model_folder, 'model.{epoch:04d}.h5')
+    torch.save(state, filename.format(epoch=epoch))
+    print('Saved checkpoint to', filename.format(epoch=epoch))
 
 def save_loss(epoch, loss, val_loss, model_path, name=None):
     if name is None:

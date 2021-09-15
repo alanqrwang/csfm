@@ -39,15 +39,6 @@ def generate_measurement(gt, noisy, mask, simulate, a, b, num_captures):
         noisy_minus = torch.poisson(a_inv * minus)
 
         frames = a*noisy_plus - a*noisy_minus + torch.normal(0, std=b) - torch.normal(0, std=b)
-        # frame1 = utils.create_2d_sequency_mask(torch.log(frames[0,0, 0]))
-        # plt.imshow(frame1)
-        # plt.show()
-        # frame2 = utils.create_2d_sequency_mask(torch.log(frames[0,1, 0]))
-        # plt.imshow(frame2)
-        # plt.show()
-        # frame3 = utils.create_2d_sequency_mask(torch.log(frames[0,2, 0]))
-        # plt.imshow(frame3)
-        # plt.show()
 
         y_noisy_under = frames * mask
 
@@ -59,20 +50,14 @@ def generate_measurement(gt, noisy, mask, simulate, a, b, num_captures):
 
         y_noisy_frames = utils.hadamard_transform_torch(noisy.view(-1, nc, n1, n2)).view(noisy.shape)
         y_noisy_under = y_noisy_frames * mask
-        # plt.imshow(noisy[0,0, 0].cpu().detach().numpy())
-        # plt.show()
-        # plt.imshow(noisy[0,1,0].cpu().detach().numpy())
-        # plt.show()
-        # plt.imshow(noisy[0,2,0].cpu().detach().numpy())
-        # plt.show()
 
         y = torch.mean(y_noisy_under, dim=1)
         
     return y
 
-class BaseUnet(nn.Module):
+class Unet(nn.Module):
     def __init__(self, device, mask_dist, mask_type, imsize, sparsity, num_captures, nh, residual=True, legacy=False):
-        super(BaseUnet, self).__init__()
+        super(Unet, self).__init__()
                 
         self.device = device
         self.residual = residual

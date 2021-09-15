@@ -1,6 +1,5 @@
-*.err
-*.out
+out/
 *.sh
-*.pkl
-*.txt
-*.h5
+__pycache__/
+job_err/
+job_out/
