@@ -43,9 +43,7 @@ class Unet(nn.Module):
       )   
   
 
-  def forward(self, y):
-    zf = utils.hadamard_transform_torch(y, normalize=False)
-
+  def forward(self, zf):
     conv1 = self.dconv_down1(zf)
     x = self.maxpool(conv1)
 
