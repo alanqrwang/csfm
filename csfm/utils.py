@@ -147,7 +147,7 @@ def save_loss(epoch, loss, val_loss, model_path, name=None):
     print('Saved loss to', pkl_path)
 
 def create_2d_sequency_mask(mask):
-    seq = np.load('/share/sablab/nfs02/users/aw847/data/fluorescentmicroscopy/256x256_2d_seq_indices.npy').astype(int)
+    seq = np.load('mask/256x256_2d_seq_indices.npy').astype(int)
     reordered_mask = np.zeros(mask.shape)
     for i in range(mask.shape[1] * mask.shape[0]):
         coord = seq[i,:]

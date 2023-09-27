@@ -3,7 +3,6 @@ import torch.nn as nn
 from csfm import utils, data, model
 import argparse
 import os
-import time
 from pprint import pprint
 import json
 from tqdm import tqdm
