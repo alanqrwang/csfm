@@ -25,8 +25,6 @@ class Parser(argparse.ArgumentParser):
                           help='filename prefix', required=True)
         self.add_argument('--models_dir', default='out/',
                           type=str, help='directory to save models')
-        self.add_argument('--date', required=True,
-                          type=str, help='Date')
 
         self.add_argument('--lr', type=float, default=1e-3,
                           help='Learning rate')
@@ -62,8 +60,7 @@ class Parser(argparse.ArgumentParser):
     def parse(self):
         args = self.parse_args()
         self.validate_args(args)
-        date = args.date if args.date is not None else '{}'.format(time.strftime('%b_%d'))
-        args.run_dir = os.path.join(args.models_dir, args.filename_prefix, date,
+        args.run_dir = os.path.join(args.models_dir, args.filename_prefix,
                                     f'captures{args.captures}_'
                                     f'bs{args.batch_size}_lr{args.lr}_'
                                     f'accelrate{args.accelrate}_'f'masktype{args.mask_type}_'
@@ -130,8 +127,8 @@ def prepare_batch(datum, conf):
     _, frames, _, c, h, w = noisy_img.shape
     noisy_img = noisy_img.permute(0, 2, 1, 3, 4, 5)
     noisy_img = noisy_img.float().to(
-        conf['device']).view(-1, frames, c, h, w)
-    clean_img = clean_img.float().to(conf['device']).view(-1, c, h, w)
+        conf['device']).reshape(-1, frames, c, h, w)
+    clean_img = clean_img.float().to(conf['device']).reshape(-1, c, h, w)
 
     if conf['add_poisson_noise']:
       # Add Poisson noise
